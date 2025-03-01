@@ -1,2 +1,2 @@
-# cpips-localhost
-An open sourced Club Penguin Island game server that is made in NodeJS to run locally on your localhost like Wand.
+# OpenCPI Web API
+An open sourced Club Penguin Island web API that is made in NodeJS to run locally on your localhost.
