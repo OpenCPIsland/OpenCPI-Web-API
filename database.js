@@ -1,5 +1,7 @@
 const postgres = require('postgres');
 
+//warning, those parametrized queries are kinda wip
+
 const sql = postgres({
     host: process.env.HOST,
     port: +process.env.PORT,
@@ -16,17 +18,17 @@ async function createDBTablesAndExstentions() {
 }
 
 async function loginUser(username, password) {
-  const password_hash = await sql`SELECT password from users WHERE first_name = '${username}'`;
-  const is_correct_password = await sql`SELECT (password_hash = crypt(${password}, ${password_hash})) AS password_match FROM users WHERE username = '${username}'`
+  const password_hash = await sql('SELECT password from users WHERE first_name = $1', [username]);
+  const is_correct_password = await sql('SELECT (password_hash = crypt($1, $2)) AS password_match FROM users WHERE username = $3', [password, password_hash, username]);
 
   return is_correct_password;
 }
 
 async function createUser(username, password, first_name, parent_email, user_id, refresh_token) {
-  await sql`INSERT INTO users (username, password, first_name, parent_email, user_id) VALUES (${username}, crypt(${password}, gen_salt('md5')), ${first_name}, ${parent_email}, ${user_id})`;
+  await sql("INSERT INTO users (username, password, first_name, parent_email, user_id) VALUES ($1, crypt($2, gen_salt('md5')), $3, $4, $5)", [username, password, first_name, parent_email, user_id]);
   var date = new Date();
   date.setDate(date.getDate() + 7)
-  await sql`INSERT INTO refresh_tokens (user_id, token, valid_until) VALUES (${user_id}, ${refresh_token}, ${date.toISOString().slice(0, 19).replace('T', ' ')})`
+  await sql('INSERT INTO refresh_tokens (user_id, token, valid_until) VALUES ($1, $2, $3)', [user_id, refresh_token, date.toISOString().slice(0, 19).replace('T', ' ')]);
 }
 
 module.exports = { createUser, createDBTablesAndExstentions, sql }
