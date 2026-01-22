@@ -1,110 +1,94 @@
-require('dotenv').config()
+require('dotenv').config();
 const express = require('express');
-const fs = require('fs');
+const fs = require('fs/promises');
 const crypto = require('crypto');
-
+const bcrypt = require('bcrypt'); //Added by Markut
 const database = require('./database.js');
-const tokens = require("./tokens.js");
-const { debug } = require('console');
+const tokens = require('./tokens.js');
 
-const app = express()
-const port = 3100
+const app = express();
+const port = process.env.PORT || 3100;
 
-database.createDBTablesAndExstentions();
+app.use(express.json({ limit: '1mb' }));
 
-app.get('/', (req, res) => {
-  res.send('Hello World!')
-})
+database.createDBTablesAndExtensions();
 
-app.use(express.json()) 
-
-app.use((req, res, next) => {
-  console.log("url: "+req.url);
-  var body = undefined;
-  if (req.body != undefined)
-  {
-    body = JSON.stringify(req.body);
-  }
-  console.log("body: "+body);
-  console.log("headers: "+req.rawHeaders);
-  next();
+app.get('/', (_, res) => {
+  res.send('OpenCPI Web API running');
 });
 
-app.get('/jgc/v5/client/:client_id/configuration/site', (req, res) => {
-  fs.readFile('./json_blobs/website_configuration.json', (err, json) => {
-    let obj = JSON.parse(json);
-    res.json(obj);
-  });
+app.get('/jgc/v5/client/:client_id/configuration/site', async (req, res) => {
+  try {
+  const json = await fs.readFile('./json_blobs/website_configuration.json', 'utf8');
+  res.json(JSON.parse(json));
+} catch (err) {
+  res.status(500).json({ error: 'File not found' });
+  }
 });
 
 app.post('/jgc/v5/client/:client_id/api-key', (req, res) => {
-  res.header("api-key", "aqnA9p/GHYcMJnHGPld3WUYS6xVbbkaizQIgUOXxUTV1ty0kGcIvQkRHMBiO89jAF+h6Bp6jWCj0KDdy71nsYSAhDpDV/5Y9AYDhQ/2efdB5XCWilW5q2g==");
-  res.send({"data":null,"error":null});
+  res.header('api-key', process.env.API_KEY);
+  res.json({ data: null, error: null });
 });
 
-app.post('/registration/text', (req, res) => {
-  fs.readFile('./json_blobs/tos.json', (err, json) => {
-    let obj = JSON.parse(json);
-    res.json(obj);
-  });
+app.post('/registration/text', async (req, res) => {
+  try {
+    const json = await fs.readFile('./json_blobs/tos.json', 'utf8');
+    res.json(JSON.parse(json));
+  } catch (err) {
+    res.status(500).json({ error: 'File not found' });
+  }
 });
 
-//TODO: implement validation for password
-app.post('/jgc/v5/client/:client_id/validate', (req, res) => {
-  console.log("HELLO?!?!");
-  var sucess = {};
-  sucess.data = null;
-  sucess.error = null;
-  res.json(sucess);
+app.post('/jgc/v5/client/:client_id/validate', (_, res) => {
+  res.json({ data: null, error: null });
 });
 
-app.post('/jgc/v5/client/:client_id/guest/register', (req, res) => {
-  var username = req.body.profile.username;
-  var password = req.body.password;
-  var firstName = req.body.profile.firstName;
-  var parentEmail = req.body.profile.parentEmail;
-  var userID = crypto.hash('sha256', crypto.randomBytes(64));
+app.post('/jgc/v5/client/:client_id/guest/register', async (req, res) => {
+  try {
+    const { profile, password } = req.body;
+    if (
+  !profile ||
+  !password ||
+  !profile.username ||
+  !profile.firstName ||
+  !profile.parentEmail
+    )
+    {
+      return res.status(400).json({ error: 'Incomplete registration data' });
+    }
 
-  var accessToken = tokens.generateJwtToken(userID, parentEmail);
-  var refreshToken = tokens.generateRefreshToken();
+    const username = profile.username;
+    const firstName = profile.firstName;
+    const parentEmail = profile.parentEmail;
+    const userID = crypto.randomUUID();
 
-  //save the token?
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-  database.createUser(username, password, firstName, parentEmail, userID, refreshToken);
+    const accessToken = tokens.generateJwtToken(userID, parentEmail);
+    const refreshToken = tokens.generateRefreshToken();
 
-  var data = {};
-  data.message = 'User registered successfully'
-  data.accessToken = accessToken;
-  data.refreshToken = refreshToken;
-  console.log("token: "+accessToken)
-  console.log("refresh: "+refreshToken)
+    await database.createUser(
+      username,
+      hashedPassword,
+      firstName,
+      parentEmail,
+      userID,
+      refreshToken
+    );
 
-  /*data.idToken = idToken;
-  data.refreshToken = refreshToken;
-  data.userID = userID;*/
+    res.status(201).json({
+      message: 'User registered successfully',
+      accessToken,
+      refreshToken
+    });
 
-  /*data.etag = crypto.randomBytes(64);
-  data.profile = req.body.profile;
-  data.marketing = [];
-
-  var token = {};
-  token.access_token = accessToken;
-  token.refresh_token = refreshToken;
-  token.swid = crypto.randomBytes(64);
-
-  data.token = token;
-
-  var displayName = {};
-  displayName.displayName = username;
-  displayName.moderatedStatusDate = null;
-  displayName.proposedDisplayName = username;
-  displayName.proposedStatus = "fine"
-
-  data.displayName = displayName;*/
-
-  res.status(201).json(data)
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
 });
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
+  console.log(`OpenCPI API listening on port ${port}`);
+});
